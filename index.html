@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>License Usage</title>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/jquery/3.2.1/jquery.slim.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/PapaParse/4.3.3/papaparse.min.js'></script>
+    <script src='https://cdn.plot.ly/plotly-1.2.0.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.18.1/moment.min.js'></script>
+    <script src='https://cdnjs.cloudflare.com/ajax/libs/lodash.js/4.17.4/lodash.min.js'></script>
+    <script>
+      var alldata
+      $(document).ready(function() {
+        var rad = document.tfform.timeframe
+        for (var i = 0; i <rad.length; i ++) {
+          rad[i].onclick = function() {
+            if (this.value == -1) plot(alldata)
+            else {
+              var value = this.value
+              var data = alldata.filter(function(r) {
+                var mm = moment(r.Time)
+                var days = moment().diff(mm, 'days')          
+                return days <= value
+              })
+              plot(data)
+            }
+          }
+        }
+      })
+      function handleUpload(files) {
+        var rows = []
+        Papa.parse(files[0], {
+          header: true,
+          dynamicTyping: true,
+          complete: function(results, file) {
+            results.data.map(function(r) {
+              r.Time = moment.unix(r.Time).toDate()
+            })
+            var data = results.data
+            alldata = data               
+            plot(data)
+          }
+        })
+      }
+      function plot(data) {  
+        if (data.length === 0) {
+          $('.chart').html('<div class="fill flex-center flex-column"><h1>Data Not Found</h1></div>')
+        }
+        else {          
+          $('.chart').html('<div class="fill flex-column" id="license-chart"></div>')
+          var area = document.getElementById('license-chart')
+          var nd = []          
+          var days = moment(_.maxBy(data, function(d) { return d.Time }).Time).diff(moment(_.minBy(data, function(d) { return d.Time }).Time), 'days')
+          var avgconsumed = _.meanBy(data, function(o) {
+            return o.Consumed
+          }) 
+          if (days > 14) {
+            var imp = _.groupBy(data, function(o) {
+              return moment(o.Time).startOf('day')
+            })                       
+            _.keys(imp).map(function(o) {              
+              nd.push({
+                Time: new Date(o),
+                Max: _.meanBy(imp[o], function(x) {
+                  return x.Max
+                }),
+                Consumed: _.meanBy(imp[o], function(x) {
+                  return x.Consumed
+                }),
+                Avg: avgconsumed
+              })
+            })
+          }
+          else if (days > 7 && days <= 14) {
+            var imp = _.groupBy(data, function(o) {
+              return moment(o.Time).startOf('hour')
+            })            
+            _.keys(imp).map(function(o) {
+                nd.push({
+                  Time: new Date(o),
+                  Max: _.meanBy(imp[o], function(x) {
+                    return x.Max
+                  }),
+                  Consumed: _.meanBy(imp[o], function(x) {
+                    return x.Consumed
+                  }),
+                  Avg: avgconsumed
+                })
+            }) 
+          }
+          else {
+            data.map(function(o) {
+              var oo = _.clone(o)
+              oo.Time = oo.Time
+              oo.Avg = avgconsumed
+              nd.push(oo)
+            })
+          }
+          Plotly.plot(area, [
+            {
+              x: nd.map(function(d) { return d.Time }),
+              y: nd.map(function(d) { return d.Consumed }),
+              name: 'Consumed',
+              fill: 'tozeroy'
+            },
+            {
+              x: nd.map(function(d) { return d.Time }),
+              y: nd.map(function(d) { return d.Max }),
+              name: 'Max'
+            },
+            {
+              x: nd.map(function(d) { return d.Time }),
+              y: nd.map(function(d) { return d.Avg }),
+              name: 'Avg Consumed'
+            }
+          ])
+        }  
+      }
+    </script>
+    <style>
+      html, body {
+        height: 100%;
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        padding: 0;
+        margin: 0;   
+        font-family: 'Segoe UI', sans-serif; 
+        font-size: 12px;
+        overflow: hidden;
+      }
+      input {
+        margin-right: 5px;
+      }
+      label {
+        margin-right: 5px;
+      }
+      h1 {
+        color: #aaa;
+      }
+      .modebar--hover {
+        display: none;
+      }
+      .root {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+      }
+      .flex-column {
+        display: flex;
+        flex-direction: column;
+      }
+      .flex-row {
+        display: flex;
+        flex-direction: row;        
+      }
+      .fill {
+        flex: 1
+      }
+      .flex-center-align {
+        align-items: center;
+      }
+      .flex-center {
+        align-items: center;
+        justify-content: center;
+      }
+      .csv-upload {
+        padding: 0 12px;
+        border-bottom: 1px solid #ccc;
+        min-height: 46px;
+      }
+      .chart {
+        background-color: #fafafa;        
+      }
+      .js-plotly-plot {
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class='root' id='root'>
+      <div class='flex-row flex-center-align csv-upload'>
+        <input type='file' onChange='handleUpload(this.files);' class='fill'>
+        <form name='tfform' class='flex-row flex-center-align'>
+          <input type='radio' name='timeframe' value='7'> <label>1 week</label>
+          <input type='radio' name='timeframe' value='14'> <label>2 weeks</label>
+          <input type='radio' name='timeframe' value='-1' checked> <label>All</label>
+        </form>
+      </div>      
+      <div class='flex-column fill chart'>
+        <div id='license-chart' class='fill'></div>
+      </div>
+    </div>    
+  </body>
+</html>
